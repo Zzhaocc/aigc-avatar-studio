@@ -6,8 +6,11 @@
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)]()
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-7.1-007808?style=flat-square)]()
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen?style=flat-square)]()
+[![CI](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml)
+[![Tests](https://img.shields.io/badge/tests-27%20passed-brightgreen?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)]()
+
+**仓库**：<https://github.com/Zzhaocc/aigc-avatar-studio>
 
 ---
 
