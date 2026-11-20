@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>AIGC Avatar Studio · AI 数字人工作台</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2322d3ee'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='14' fill='%230b1220' text-anchor='middle'%3EAV%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">AV</div>
+      <div>
+        <div class="brand-title">AIGC Avatar</div>
+        <div class="brand-sub">Studio · 数字人工作台</div>
+      </div>
+    </div>
+
+    <div class="health" id="health">
+      <span class="dot pending"></span>
+      <div>
+        <div class="health-title">正在连接</div>
+        <div class="health-sub">/api/health</div>
+      </div>
+    </div>
+
+    <nav class="nav" id="nav">
+      <button class="nav-item active" data-view="studio"><span class="nav-ico">▶</span>工作台</button>
+      <button class="nav-item" data-view="models"><span class="nav-ico">▦</span>模型服务</button>
+      <button class="nav-item" data-view="voices"><span class="nav-ico">◍</span>音色</button>
+      <button class="nav-item" data-view="jobs"><span class="nav-ico">≡</span>任务</button>
+      <button class="nav-item" data-view="tools"><span class="nav-ico">⚒</span>工具箱</button>
+      <button class="nav-item" data-view="metrics"><span class="nav-ico">◔</span>指标</button>
+    </nav>
+
+    <div class="side-foot">
+      <div class="side-foot-title">本机引擎</div>
+      <div class="side-foot-body" id="engine-info">local-engine · ffmpeg</div>
+      <div class="side-foot-note">无需 GPU · 无需模型权重</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- 工作台 -->
+    <section class="view" id="view-studio">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">STUDIO / PRODUCE</div>
+          <h1>从一段文案到一条数字人视频</h1>
+          <p class="page-sub">切句 → 逐句 TTS → 时间轴字幕 → 数字人渲染 → 清单。全流程可观测、可取消、可重试。</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" id="btn-demo">一键示例</button>
+          <button class="btn btn-primary" id="btn-produce">生成视频</button>
+        </div>
+      </header>
+
+      <div class="studio-grid">
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">脚本</span>
+            <span class="muted" id="script-meta">0 字</span>
+          </div>
+          <div class="demo-chips" id="demo-chips"></div>
+          <textarea id="script" class="script-input" rows="9" spellcheck="false"
+            placeholder="输入口播文案，例如：大家好，今天介绍一款……"></textarea>
+          <div class="form-grid">
+            <label class="field">
+              <span>音色</span>
+              <select id="voice"></select>
+            </label>
+            <label class="field">
+              <span>画面风格</span>
+              <select id="style"></select>
+            </label>
+            <label class="field">
+              <span>分辨率</span>
+              <select id="resolution"></select>
+            </label>
+            <label class="field">
+              <span>模型服务</span>
+              <select id="model"></select>
+            </label>
+          </div>
+          <div class="hint" id="estimate">预计时长 —</div>
+        </div>
+
+        <div class="panel" id="job-panel">
+          <div class="panel-head">
+            <span class="panel-title">当前任务</span>
+            <span class="pill" id="job-status">空闲</span>
+          </div>
+          <div id="job-body" class="job-body">
+            <div class="empty">
+              <div class="empty-mark">◍</div>
+              <div class="empty-title">还没有任务</div>
+              <div class="empty-desc">输入脚本后点「生成视频」，或先试一下「一键示例」。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel mt">
+        <div class="panel-head">
+          <span class="panel-title">最近任务</span>
+          <button class="link" id="btn-refresh">刷新</button>
+        </div>
+        <div id="recent-jobs" class="job-list"></div>
+      </div>
+    </section>
+
+    <!-- 模型服务 -->
+    <section class="view hidden" id="view-models">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">MODELS / LIFECYCLE</div>
+          <h1>模型服务</h1>
+          <p class="page-sub">安装 → 启动 → 运行 → 停止 → 卸载。状态、进度、端口、健康检查都是真的；推理后端由适配器决定。</p>
+        </div>
+        <div class="page-actions"><button class="btn btn-ghost" id="btn-models-refresh">刷新</button></div>
+      </header>
+      <div class="model-grid" id="model-grid"></div>
+    </section>
+
+    <!-- 音色 -->
+    <section class="view hidden" id="view-voices">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">VOICES / CLONE</div>
+          <h1>音色</h1>
+          <p class="page-sub">预设音色开箱即用；克隆音色会上传参考音频并分析基频与音色倾向。</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" id="btn-new-voice">新建音色</button>
+          <button class="btn btn-primary" id="btn-clone">克隆音色</button>
+        </div>
+      </header>
+      <div class="voice-grid" id="voice-grid"></div>
+    </section>
+
+    <!-- 任务 -->
+    <section class="view hidden" id="view-jobs">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">JOBS / QUEUE</div>
+          <h1>任务队列</h1>
+          <p class="page-sub">单 worker 顺序执行（对应单卡 GPU 的真实约束），支持取消与重试。</p>
+        </div>
+        <div class="page-actions"><button class="btn btn-ghost" id="btn-jobs-refresh">刷新</button></div>
+      </header>
+      <div class="panel"><div id="jobs-table"></div></div>
+    </section>
+
+    <!-- 工具箱 -->
+    <section class="view hidden" id="view-tools">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">TOOLBOX / FFMPEG</div>
+          <h1>工具箱</h1>
+          <p class="page-sub">对已有产物做探测、抽音轨、截封面、调倍速 —— 真实调用 ffmpeg。</p>
+        </div>
+      </header>
+      <div class="panel">
+        <div class="form-grid">
+          <label class="field">
+            <span>选择产物</span>
+            <select id="tool-asset"></select>
+          </label>
+          <label class="field">
+            <span>工具</span>
+            <select id="tool-name">
+              <option value="probe">读取媒体信息</option>
+              <option value="extract_audio">提取音轨（mp3）</option>
+              <option value="thumbnail">截取封面</option>
+              <option value="change_speed">调整倍速</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>参数（倍速 0.5–2.0 / 截帧秒数）</span>
+            <input id="tool-arg" type="text" placeholder="1.25">
+          </label>
+          <label class="field field-btn">
+            <span>&nbsp;</span>
+            <button class="btn btn-primary" id="btn-tool-run">执行</button>
+          </label>
+        </div>
+        <pre class="json" id="tool-result">// 执行结果会显示在这里</pre>
+      </div>
+    </section>
+
+    <!-- 指标 -->
+    <section class="view hidden" id="view-metrics">
+      <header class="page-head">
+        <div>
+          <div class="eyebrow">METRICS</div>
+          <h1>运行指标</h1>
+          <p class="page-sub">任务成功率、平均耗时、产物体积、模型磁盘占用。</p>
+        </div>
+        <div class="page-actions"><button class="btn btn-ghost" id="btn-metrics-refresh">刷新</button></div>
+      </header>
+      <div class="metric-grid" id="metric-grid"></div>
+      <div class="panel mt"><div id="metrics-agents"></div></div>
+    </section>
+  </main>
+</div>
+
+<div class="toast-stack" id="toast-stack"></div>
+<div id="modal-root"></div>
+<script src="./app.js" defer></script>
+</body>
+</html>

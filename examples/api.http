@@ -1,0 +1,91 @@
+### AIGC Avatar Studio · API 示例
+### VS Code REST Client / JetBrains HTTP Client 可直接执行
+
+@baseUrl = http://127.0.0.1:8000
+@jobId = 替换为真实 job_id
+@modelId = 替换为真实 model_id（GET /api/models）
+@assetId = 替换为真实 asset_id（GET /api/assets）
+
+### 1. 健康检查
+GET {{baseUrl}}/api/health
+
+### 2. 目录：模型 / 音色 / 风格 / 示例脚本
+GET {{baseUrl}}/api/catalog
+
+### 3. 模型服务列表
+GET {{baseUrl}}/api/models
+
+### 4. 安装一个模型（异步，轮询第 3 条看 progress）
+POST {{baseUrl}}/api/models/{{modelId}}/install
+
+### 5. 启动 / 停止 / 卸载
+POST {{baseUrl}}/api/models/{{modelId}}/start
+
+###
+POST {{baseUrl}}/api/models/{{modelId}}/stop
+
+###
+POST {{baseUrl}}/api/models/{{modelId}}/uninstall
+
+### 6. 生产一条视频
+POST {{baseUrl}}/api/produce
+Content-Type: application/json
+
+< ./produce.json
+
+### 7. 一键示例（最快看到成片）
+POST {{baseUrl}}/api/demo/run
+
+### 8. 查任务（步骤 + 产物）
+GET {{baseUrl}}/api/jobs/{{jobId}}
+
+### 9. 任务列表
+GET {{baseUrl}}/api/jobs?limit=20
+
+### 10. 取消 / 重试 / 删除
+POST {{baseUrl}}/api/jobs/{{jobId}}/cancel
+
+###
+POST {{baseUrl}}/api/jobs/{{jobId}}/retry
+
+###
+DELETE {{baseUrl}}/api/jobs/{{jobId}}
+
+### 11. 产物列表与下载
+GET {{baseUrl}}/api/assets?limit=20
+
+### 下载成片（浏览器打开即预览）
+GET {{baseUrl}}/api/assets/{{assetId}}?inline=1
+
+### 12. 克隆音色
+POST {{baseUrl}}/api/voices/clone
+Content-Type: application/json
+
+< ./voice_clone.json
+
+### 13. 工具箱：探测
+POST {{baseUrl}}/api/tools/probe
+Content-Type: application/json
+
+{"asset_id": "{{assetId}}", "args": {}}
+
+### 14. 工具箱：截封面
+POST {{baseUrl}}/api/tools/thumbnail
+Content-Type: application/json
+
+{"asset_id": "{{assetId}}", "args": {"at": 1.0}}
+
+### 15. 工具箱：调倍速
+POST {{baseUrl}}/api/tools/change_speed
+Content-Type: application/json
+
+{"asset_id": "{{assetId}}", "args": {"factor": 1.25}}
+
+### 16. 指标
+GET {{baseUrl}}/api/metrics
+
+### 17. 契约校验：空脚本应返回 422
+POST {{baseUrl}}/api/produce
+Content-Type: application/json
+
+{"script": ""}
