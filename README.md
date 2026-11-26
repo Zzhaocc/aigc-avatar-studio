@@ -1,43 +1,54 @@
-# AIGC Avatar Studio · AI 数字人内容生产平台
+# AIGC Avatar Studio · 数字人内容生产平台
 
-> 一段文案 → 一条带语音、字幕、数字人画面的视频。
-> 服务端可运行：模型服务生命周期 + 媒体管线 + 任务队列 + FFmpeg 工具箱。
+> 服务端的数字人视频生产：文案进来，带语音、字幕、数字人画面的 MP4 出去。
+> 同时把模型服务当成一等资源来管理：安装、启动、端口、健康检查、状态收敛。
 
+[![Version](https://img.shields.io/badge/version-0.6.0-blue?style=flat-square)](CHANGELOG.md)
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-3776AB?style=flat-square)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square)](https://fastapi.tiangolo.com/)
 [![FFmpeg](https://img.shields.io/badge/FFmpeg-7.1-007808?style=flat-square)](https://ffmpeg.org/)
 [![CI](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-38%20passed-brightgreen?style=flat-square)]()
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
-**仓库**：<https://github.com/Zzhaocc/aigc-avatar-studio>
+---
+
+## 产品定位
+
+面向**内容生产团队**的数字人视频后端。它解决两件在本地工具里很难做好的事：
+
+1. **生产可编排**：文案 → 切句 → 语音 → 字幕 → 画面 → 封装，五步都有进度、耗时与产物，
+   失败可重试，进程重启可恢复；
+2. **模型可运营**：8 个模型服务各自有安装目录、下载进度、端口与健康状态，
+   状态机覆盖安装、启动、停止、卸载与异常，推理后端按需切换。
+
+| 维度 | 说明 |
+|---|---|
+| 目标用户 | 需要批量产出数字人口播视频的内容团队与工具产品 |
+| 核心价值 | 把「一条视频」变成可排队、可观测、可替换模型的生产任务 |
+| 交付形态 | 服务端应用 + Web 控制台 + REST API；Docker / Compose / 裸机 |
+| 引擎策略 | 内置离线引擎开箱可用；真实模型通过 `AIGC_<KEY>_URL` 接入 |
+| 不覆盖 | 模型权重分发、直播推流、桌面端打包（见 [能力边界](#能力边界)） |
 
 ---
 
-## 这是什么
+## 能力矩阵
 
-AIGC Avatar Studio 是服务端的数字人内容生产平台：一段文案进来，一条带语音、字幕、数字人画面的 MP4 出去。
-
-```text
-文案 → 切句 → 逐句 TTS → 拼接 → 时间轴字幕 → 逐帧渲染 → H.264/AAC 封装
-                                                          ↓
-                                       MP4 + WAV + SRT + 封面 + 清单
-```
-
-同时它把**模型服务**当成一等公民来管：8 个模型服务各自有安装目录、下载进度、端口与健康检查，
-状态机覆盖「未安装 → 下载 → 已装 → 启动 → 运行 → 停止 → 卸载 → 失败」。
-推理后端由适配器决定：内置离线引擎可直接使用，接真实模型只需把 `AIGC_<KEY>_URL` 指过去。
-
-**不需要 GPU、不需要模型权重、不需要 API key**：内置引擎用 numpy 合成语音、Pillow + ffmpeg 渲染画面，
-产出真实可播放的 WAV / MP4 / SRT。生产走服务端队列，有步骤级进度、取消、重试与恢复。
+| 能力 | 说明 | 产物 |
+|---|---|---|
+| 生产管线 | 切句（≤28 字）→ 逐句 TTS → 拼接 → 时间轴字幕 → 逐帧渲染 → H.264/AAC 封装 | MP4 + WAV + SRT + 封面 + 清单 |
+| 模型服务管理 | 安装（带进度）/ 启动（分配端口）/ 停止 / 卸载 / 健康探测 / 启动收敛 | `models/<key>/` 目录 + 状态与端口 |
+| 音色 | 预设音色、手填参数、参考音频克隆（基频与音色倾向分析） | 音色记录 + 试听音频 |
+| 任务队列 | 单 worker、步骤级进度、协作式取消、失败重试、崩溃恢复、ffmpeg 超时 | 任务与步骤记录 |
+| FFmpeg 工具箱 | 探测 / 抽取音轨 / 截封面 / 调整倍速，结果落库为新产物 | 派生产物 |
+| 可观测 | 结构化日志 + request_id、存活/就绪探针、运行指标 | 日志、指标、任务详情 |
 
 ---
 
-## 30 秒跑起来
+## 快速开始
 
-唯一的外部依赖是 **ffmpeg**（`ffmpeg -version` 能跑即可）。
+唯一的外部依赖是 **ffmpeg**（`ffmpeg -version` 能跑即可）；容器镜像已内置 ffmpeg 与中文字体。
 
-### Docker（推荐，镜像已含 ffmpeg 与中文字体）
+### Docker（推荐）
 
 ```bash
 git clone https://github.com/Zzhaocc/aigc-avatar-studio.git
@@ -58,7 +69,7 @@ python -m uvicorn app.main:app --port 8000
 
 Windows 也可以直接双击 `start.bat`，或运行 `.\scripts\run.ps1 -Port 8000`。
 
-### 不启服务也能验证
+### 命令行验证
 
 ```bash
 python scripts/demo.py      # 跑一条完整生产链路，打印每步耗时与产物路径
@@ -80,25 +91,27 @@ python scripts/demo.py      # 跑一条完整生产链路，打印每步耗时�
 
 ---
 
-## 它能做什么
-
-### 1. 模型服务生命周期
+## 模型服务生命周期
 
 8 个模型服务（CosyVoice-300M / IndexTTS / FishSpeech / FunASR / MuseTalk / Wav2Lip / LatentSync / 内置引擎），
 每个都有真实的安装目录、进度、端口与健康检查：
 
 ```text
-not_installed →(install)→ downloading 0%…100% → installed
-installed →(start)→ starting → running →(stop)→ stopped
-任意可逆状态 →(uninstall)→ not_installed
-安装失败 →(error)→ 可重新安装
+not_installed --install--> downloading --100%--> installed
+installed     --start-->   starting    --ok-->   running --stop--> stopped
+stopped       --start-->   starting
+any reversible state --uninstall--> not_installed
+downloading   --失败-->    error       --install-->   downloading
 ```
 
-安装会真的在 `data/models/<key>/` 下落目录与清单；启动会分配端口、写 `runtime.json`；
-健康检查按端口探测。**推理后端由适配器决定**：内置引擎直接可用，其它模型需要把
-`AIGC_<KEY>_URL` 指向真实服务（`app/providers/adapters.py` 里有 HTTP 适配器模板）。
+- 安装会真的在 `data/models/<key>/` 下落目录与清单；启动会分配端口并写 `runtime.json`；
+  健康检查按端口探测；
+- 推理后端由适配器决定：内置引擎直接可用，其它模型需要把 `AIGC_<KEY>_URL` 指向真实服务；
+- 未配置后端时选择真实模型会返回 409 并提示变量名，不会静默降级。
 
-### 2. 媒体管线
+---
+
+## 媒体管线
 
 ```text
 脚本 → 切句（≤28 字）→ 逐句 TTS → 拼接 + 句间静音 → 时间轴字幕 → 数字人视频 → 缩略图 + 清单
@@ -107,26 +120,8 @@ installed →(start)→ starting → running →(stop)→ stopped
 - **TTS**：numpy 逐字合成（基频 + 谐波 + 包络 + 确定性抖动），输出 24kHz 单声道 WAV；
 - **字幕**：按每句真实时长生成 SRT，时间轴与音频一致；
 - **视频**：Pillow 逐帧渲染（渐变背景 + 数字人头像 + 音频包络驱动的口型条 + 字幕），
-  ffmpeg 编码 H.264 + AAC，2 fps 保证速度，成片可直接播放；
+  ffmpeg 编码 H.264 + AAC，2 fps 保证速度；
 - **音色**：pitch / speed / timbre 三个参数直接作用在合成器上，克隆音色会分析参考音频的基频。
-
-### 3. 任务队列
-
-单 worker 顺序执行（对应单卡 GPU 的真实约束），任务与步骤分离：
-
-- 5 个步骤各自报进度与耗时：script / tts / subtitle / avatar / manifest
-- 取消是协作式的（每个句子前检查），1 秒内生效
-- 失败可一键重试；进程重启会把中断任务标为 failed，不会永远 running
-
-### 4. 工具箱（FFmpeg）
-
-对任意产物做 probe / 提取音轨 / 截封面 / 调倍速，结果作为新产物落库。
-
-### 5. 可观测
-
-- 每个任务有步骤耗时、产物大小、时长；`/api/metrics` 给出成功率、平均耗时、产物体积、模型磁盘占用；
-- 结构化日志（`text` / `json`），每条带 `request_id`，与响应头 `X-Request-ID` 对齐；
-- 两个探针：`/api/health`（存活）、`/api/ready`（数据库 / ffmpeg / 数据目录）。
 
 ---
 
@@ -155,10 +150,8 @@ installed →(start)→ starting → running →(stop)→ stopped
         └───────────────────────────────────────────────────┘
 ```
 
-**边界**：管线只依赖 `TTSEngine` / `AvatarEngine` 两个 Protocol，
-换真实模型只改适配器，任务队列、API、前端都不用动。
-
-分层细节、状态机、失败模式与取舍见 [架构与设计决策](docs/ARCHITECTURE.md)。
+管线只依赖 `TTSEngine` / `AvatarEngine` 两个 Protocol，
+换真实模型只改适配器，任务队列、API、前端都不用动。细节见 [架构与设计决策](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -182,7 +175,7 @@ installed →(start)→ starting → running →(stop)→ stopped
 
 ---
 
-## API 示例
+## API 与集成
 
 完整接口见 [`docs/API.md`](docs/API.md)，`examples/` 下是可直接执行的请求。
 
@@ -212,6 +205,16 @@ curl -X POST http://127.0.0.1:8000/api/models/{model_id}/start
 
 所有错误响应统一为 `{"detail": ..., "request_id": ...}`，排查时按 `request_id` 检索日志。
 
+### 接入真实模型
+
+```bash
+# 以 CosyVoice 为例：先部署推理服务，再把它指给平台
+export AIGC_COSYVOICE_300M_URL=http://127.0.0.1:9880
+```
+
+模型服务需要暴露 `POST /tts`（返回 wav）或 `POST /lip-sync`（返回 mp4）；
+`app/providers/adapters.py` 里有 HTTP 适配器模板，请求超时取 `AIGC_REMOTE_TIMEOUT`。
+
 ---
 
 ## 部署与运维
@@ -229,26 +232,34 @@ make docker-build    # 构建镜像（内含 ffmpeg 与中文字体）
 - **备份**：`sqlite3 data/studio.db ".backup ..."` + 打包 `data/media`、`data/uploads`、`data/models`；
 - **扩容**：队列是进程内线程池，多机需要换外部队列 + 对象存储；内置接口不带鉴权，对外必须置于网关之后。
 
-完整部署形态、故障排查表与上线检查清单见 [运维手册](docs/OPERATIONS.md)，
-安全边界与漏洞报告流程见 [SECURITY.md](SECURITY.md)。
+部署形态、故障排查表与上线检查清单见 [运维手册](docs/OPERATIONS.md)，
+安全边界见 [SECURITY.md](SECURITY.md)，版本策略见 [版本与发布](docs/RELEASE.md)。
 
 ---
 
-## 测试
+## 运行指标
 
-```bash
-python -m pytest -q     # 38 passed
-```
+本机实测（内置引擎，8–15 秒成片）：
 
-| 分组 | 数量 | 覆盖 |
-|---|---|---|
-| 媒体 | 14 | WAV 合成与确定性、SRT 时间轴、MP4 编码、ffprobe 探测、工具箱四件套 |
-| 管线 | 5 | 切句、五步端到端、取消、重试、清单完整性 |
-| API | 8 | 契约校验（404/409/422）、模型生命周期、产物下载、工具箱、指标 |
-| 平台 | 11 | 探针、request_id、安全响应头、错误契约、产物路径校验、配置解析与两条回归 |
+| 指标 | 数值 |
+|---|---|
+| 一条 15.6 秒成片 | ~5 s（含 5 段 TTS、32 帧渲染、H.264 编码） |
+| 渲染帧率 | 2 fps（15.6s 约 32 帧） |
+| 单条成片体积 | ~1.5 MB（720×1280，15.6s） |
+| 测试 | 38 passed（媒体 14 + 管线 5 + API 8 + 平台 11） |
+| 模型安装模拟耗时 | ~0.5 s（可配 `AIGC_DOWNLOAD_STEP`） |
 
-CI 在 push / PR 时跑 ruff + pytest（3.11 / 3.13，含真实 ffmpeg 编码与中文字体）+ HTTP 冒烟，
-见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
+数字随机器、ffmpeg 版本与脚本长度波动，可用 `python scripts/demo.py` 复现。
+
+---
+
+## 版本与支持
+
+- **版本号**：语义化版本，当前 `0.6.0`，变更记录见 [CHANGELOG](CHANGELOG.md)；
+- **发布流程**：分支策略、检查清单与回滚见 [版本与发布](docs/RELEASE.md)；
+- **质量门禁**：CI 跑 ruff + pytest（3.11 / 3.13，含真实 ffmpeg 编码与中文字体）+ HTTP 冒烟；
+- **支持渠道**：缺陷与需求走 [Issues](https://github.com/Zzhaocc/aigc-avatar-studio/issues)，
+  安全问题走 [Security Advisory](SECURITY.md)。
 
 ---
 
@@ -266,66 +277,39 @@ CI 在 push / PR 时跑 ruff + pytest（3.11 / 3.13，含真实 ffmpeg 编码与
 
 ---
 
-## 目录
-
-```text
-aigc-avatar-studio/
-├── app/
-│   ├── main.py                  # 应用装配、中间件、启动收敛与恢复
-│   ├── config.py                # 环境变量配置（单一数据根目录）
-│   ├── logging.py               # 结构化日志 + request_id 注入
-│   ├── middleware.py            # 请求关联 ID、访问日志、安全响应头
-│   ├── errors.py                # 统一错误响应
-│   ├── db.py / models.py        # SQLAlchemy 模型（ModelService/Voice/Job/JobStep/Asset）
-│   ├── api/                     # REST 路由 + 请求模型
-│   ├── providers/
-│   │   ├── catalog.py           # 8 个模型服务 + 预设音色
-│   │   ├── manager.py           # 安装/启动/停止/卸载/健康状态机
-│   │   ├── adapters.py          # LocalEngine + RemoteHTTPEngine 模板
-│   │   └── base.py              # TTS/Avatar/ASR Protocol
-│   ├── pipeline/
-│   │   ├── script.py            # 切句与时长估算
-│   │   ├── produce.py           # 五步生产管线
-│   │   └── jobs.py              # 队列、进度、取消、重试
-│   └── media/                   # TTS(WAV) / 字幕(SRT) / 数字人渲染(MP4)
-├── web/                         # 单页控制台
-├── tests/                       # 媒体 / 管线 / API / 平台（38 个）
-├── examples/                    # curl / .http 示例
-├── scripts/                     # demo / 冒烟 / 截图
-├── docs/                        # 架构、API、运维手册、截图
-├── Dockerfile                   # 多阶段构建，内置 ffmpeg 与中文字体、非 root
-├── docker-compose.yml
-└── Makefile                     # install / run / test / lint / smoke / docker-*
-```
-
----
-
 ## Roadmap
 
-| 版本 | 内容 |
-|---|---|
-| v0.6（当前） | 生产化加固：结构化日志与 request_id、探针、统一错误契约、容器化、运维与安全文档 |
-| v0.7 | 真实 TTS 适配器（CosyVoice / IndexTTS），保留 `synthesize` 契约 |
-| v0.8 | 对象存储与产物签名 URL；任务中间帧目录自动清理 |
-| v0.9 | 外部队列 + 多副本；长脚本分片与断点续跑 |
-| v1.0 | 数字人形象库与多模板；字幕样式可配置 |
-
-变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+| 版本 | 内容 | 状态 |
+|---|---|---|
+| v0.6 | 生产化加固：结构化日志与 request_id、探针、统一错误契约、容器化、运维与安全文档 | 已交付 |
+| v0.7 | 真实 TTS 适配器（CosyVoice / IndexTTS），保留 `synthesize` 契约 | 规划中 |
+| v0.8 | 对象存储与产物签名 URL；任务中间帧目录自动清理 | 规划中 |
+| v0.9 | 外部队列 + 多副本；长脚本分片与断点续跑 | 规划中 |
+| v1.0 | 数字人形象库与多模板；字幕样式可配置 | 规划中 |
 
 ---
 
 ## 文档
 
-- [架构与设计决策](docs/ARCHITECTURE.md) —— 分层、模型状态机、生产管线、可观测、安全边界、取舍
-- [API 参考](docs/API.md) —— 全部端点、探针、错误契约与示例
-- [运维手册](docs/OPERATIONS.md) —— 部署形态、探针、日志排障、备份、扩容、上线清单
-- [安全策略](SECURITY.md) —— 安全边界与漏洞报告流程
-- [贡献指南](CONTRIBUTING.md) —— 本地开发、PR 前必过的检查、如何接真实模型
+| 文档 | 内容 |
+|---|---|
+| [架构与设计决策](docs/ARCHITECTURE.md) | 分层、模型状态机、生产管线、可观测、安全边界、取舍 |
+| [API 参考](docs/API.md) | 全部端点、探针、错误契约与示例 |
+| [运维手册](docs/OPERATIONS.md) | 部署形态、探针、日志排障、备份、扩容、上线清单 |
+| [版本与发布](docs/RELEASE.md) | 版本策略、分支与合并、发布清单、回滚 |
+| [安全策略](SECURITY.md) | 安全边界与漏洞报告流程 |
+| [贡献指南](CONTRIBUTING.md) | 本地开发、PR 前检查、如何接真实模型 |
 
 ---
 
-## 致谢与许可
+## 许可
 
-- 致谢 [AIGCPanel](https://github.com/modstart-lib/aigcpanel)：产品形态来源；
-- 项目名称沿用 AIGC 数字人领域的通用叫法，示例素材与音色均为程序生成，不含真实人物；
-- MIT License，见 [LICENSE](LICENSE)。
+MIT License，见 [LICENSE](LICENSE)。示例脚本、音色与画面均为程序生成，不含真实人物素材；
+产品形态来源见文末致谢。
+
+<details>
+<summary>产品形态来源</summary>
+
+模型服务管理与数字人生产的产品形态参考开源桌面客户端
+[AIGCPanel](https://github.com/modstart-lib/aigcpanel)。
+</details>
