@@ -3,12 +3,12 @@
 > 一段文案 → 一条带语音、字幕、数字人画面的视频。
 > 服务端可运行：模型服务生命周期 + 真实媒体管线 + 任务队列 + FFmpeg 工具箱。
 
-[![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=flat-square)]()
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square)]()
-[![FFmpeg](https://img.shields.io/badge/FFmpeg-7.1-007808?style=flat-square)]()
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-3776AB?style=flat-square)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square)](https://fastapi.tiangolo.com/)
+[![FFmpeg](https://img.shields.io/badge/FFmpeg-7.1-007808?style=flat-square)](https://ffmpeg.org/)
 [![CI](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/Zzhaocc/aigc-avatar-studio/actions/workflows/ci.yml)
-[![Tests](https://img.shields.io/badge/tests-27%20passed-brightgreen?style=flat-square)]()
-[![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)]()
+[![Tests](https://img.shields.io/badge/tests-38%20passed-brightgreen?style=flat-square)]()
+[![License](https://img.shields.io/badge/license-MIT-yellow?style=flat-square)](LICENSE)
 
 **仓库**：<https://github.com/Zzhaocc/aigc-avatar-studio>
 
@@ -34,20 +34,34 @@
 
 ## 30 秒跑起来
 
+唯一的外部依赖是 **ffmpeg**（`ffmpeg -version` 能跑即可）。
+
+### Docker（推荐，镜像已含 ffmpeg 与中文字体）
+
 ```bash
-cd AIGC-Avatar-Studio
-pip install -r requirements.txt
-python -m uvicorn app.main:app --port 8000
+git clone https://github.com/Zzhaocc/aigc-avatar-studio.git
+cd aigc-avatar-studio
+docker compose up -d --build
 ```
 
 打开 <http://127.0.0.1:8000>，点「一键示例」，等 3–6 秒就能看到成片。
 
+### 本地
+
 ```bash
-# 命令行跑完整链路（不需要起服务）
-python scripts/demo.py
+git clone https://github.com/Zzhaocc/aigc-avatar-studio.git
+cd aigc-avatar-studio
+pip install -r requirements.txt
+python -m uvicorn app.main:app --port 8000
 ```
 
-依赖只有 `ffmpeg`（已在 PATH 即可）。
+Windows 也可以直接双击 `start.bat`，或运行 `.\scripts\run.ps1 -Port 8000`。
+
+### 不启服务也能验证
+
+```bash
+python scripts/demo.py      # 跑一条完整生产链路，打印每步耗时与产物路径
+```
 
 ---
 
@@ -60,6 +74,8 @@ python scripts/demo.py
 | 模型服务 | 音色 |
 |---|---|
 | ![模型](docs/screenshots/console-models.jpg) | ![音色](docs/screenshots/console-voices.jpg) |
+
+更多截图见 [`docs/screenshots/`](docs/screenshots/)：任务列表、指标、工具箱。
 
 ---
 
@@ -74,6 +90,7 @@ python scripts/demo.py
 not_installed →(install)→ downloading 0%…100% → installed
 installed →(start)→ starting → running →(stop)→ stopped
 任意可逆状态 →(uninstall)→ not_installed
+安装失败 →(error)→ 可重新安装
 ```
 
 安装会真的在 `data/models/<key>/` 下落目录与清单；启动会分配端口、写 `runtime.json`；
@@ -106,7 +123,9 @@ installed →(start)→ starting → running →(stop)→ stopped
 
 ### 5. 可观测
 
-每个任务有步骤耗时、产物大小、时长；`/api/metrics` 给出成功率、平均耗时、产物体积、模型磁盘占用。
+- 每个任务有步骤耗时、产物大小、时长；`/api/metrics` 给出成功率、平均耗时、产物体积、模型磁盘占用；
+- 结构化日志（`text` / `json`），每条带 `request_id`，与响应头 `X-Request-ID` 对齐；
+- 两个探针：`/api/health`（存活）、`/api/ready`（数据库 / ffmpeg / 数据目录）。
 
 ---
 
@@ -115,6 +134,7 @@ installed →(start)→ starting → running →(stop)→ stopped
 ```text
               ┌──────────────── 接入层 ────────────────┐
               │   REST /api  ·  Web 控制台  ·  Swagger  │
+              │   CORS → X-Request-ID → 安全响应头      │
               └───────────────────┬────────────────────┘
                                   │
         ┌─────────────────────────▼──────────────────────────┐
@@ -131,11 +151,33 @@ installed →(start)→ starting → running →(stop)→ stopped
         │              推理引擎适配器 Engine                │
         │   LocalEngine（numpy + Pillow + ffmpeg）          │
         │   RemoteHTTPEngine（CosyVoice / MuseTalk 模板）   │
-        └──────────────────────────────────────────────────┘
+        └───────────────────────────────────────────────────┘
 ```
 
 **边界**：管线只依赖 `TTSEngine` / `AvatarEngine` 两个 Protocol，
 换真实模型只改适配器，任务队列、API、前端都不用动。
+
+分层细节、状态机、失败模式与取舍见 [架构与设计决策](docs/ARCHITECTURE.md)。
+
+---
+
+## 配置
+
+全部通过环境变量注入，完整清单见 [`.env.example`](.env.example) 与 [运维手册](docs/OPERATIONS.md)。
+
+| 变量 | 默认 | 说明 |
+|---|---|---|
+| `AIGC_DATA_DIR` | `./data` | 数据根目录，派生 `media/` `models/` `uploads/` |
+| `DATABASE_URL` | `sqlite:///./data/studio.db` | 换 PostgreSQL 只改这一行 |
+| `FFMPEG_BIN` / `FFPROBE_BIN` | `ffmpeg` / `ffprobe` | 可执行文件路径 |
+| `AIGC_FFMPEG_TIMEOUT` | `300` | 单条 ffmpeg 命令超时（秒） |
+| `AIGC_SAMPLE_RATE` | `24000` | 输出采样率，贯穿 TTS / 拼接 / 抽音轨 |
+| `AIGC_WIDTH` / `AIGC_HEIGHT` / `AIGC_FPS` | `720` / `1280` / `2` | 默认分辨率与帧率 |
+| `AIGC_MAX_WORKERS` | `1` | 队列并发 |
+| `AIGC_REMOTE_TIMEOUT` | `120` | 远程推理请求超时（秒） |
+| `CORS_ORIGINS` | `*` | 生产填具体域名 |
+| `LOG_LEVEL` / `LOG_FORMAT` | `INFO` / `text` | `json` 用于日志采集 |
+| `DOCS_ENABLED` | `true` | 生产建议关闭 `/docs` |
 
 ---
 
@@ -144,6 +186,10 @@ installed →(start)→ starting → running →(stop)→ stopped
 完整接口见 [`docs/API.md`](docs/API.md)，`examples/` 下是可直接执行的请求。
 
 ```bash
+# 探针
+curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/api/ready
+
 # 一键示例
 curl -X POST http://127.0.0.1:8000/api/demo/run
 
@@ -163,20 +209,49 @@ curl -X POST http://127.0.0.1:8000/api/models/{model_id}/install
 curl -X POST http://127.0.0.1:8000/api/models/{model_id}/start
 ```
 
+所有错误响应统一为 `{"detail": ..., "request_id": ...}`，排查时按 `request_id` 检索日志。
+
+---
+
+## 部署与运维
+
+```bash
+make install-dev     # 安装开发依赖（含测试与 ruff）
+make test            # 测试 + 覆盖率（需要 ffmpeg）
+make lint            # ruff 静态检查
+make smoke           # 对已启动的服务做端到端冒烟
+make docker-build    # 构建镜像（内含 ffmpeg 与中文字体）
+```
+
+- **探针**：`/api/health`（存活，不查库）、`/api/ready`（就绪：数据库 / ffmpeg / ffprobe / 数据目录可写）；
+- **日志**：`LOG_FORMAT=json` 接采集平台，按 `request_id` 关联一次请求；
+- **备份**：`sqlite3 data/studio.db ".backup ..."` + 打包 `data/media`、`data/uploads`、`data/models`；
+- **扩容**：队列是进程内线程池，多机需要换外部队列 + 对象存储；内置接口不带鉴权，对外必须置于网关之后。
+
+完整部署形态、故障排查表与上线检查清单见 [运维手册](docs/OPERATIONS.md)，
+安全边界与漏洞报告流程见 [SECURITY.md](SECURITY.md)。
+
 ---
 
 ## 测试
 
 ```bash
-python -m pytest -q     # 27 passed
+python -m pytest -q     # 38 passed
 ```
 
-覆盖：媒体引擎（WAV 合成 / 确定性 / SRT 时间轴 / MP4 编码 / ffmpeg 工具）、
-生产管线端到端、任务取消与重试、模型状态机、API 契约。
+| 分组 | 数量 | 覆盖 |
+|---|---|---|
+| 媒体 | 14 | WAV 合成与确定性、SRT 时间轴、MP4 编码、ffprobe 探测、工具箱四件套 |
+| 管线 | 5 | 切句、五步端到端、取消、重试、清单完整性 |
+| API | 8 | 契约校验（404/409/422）、模型生命周期、产物下载、工具箱、指标 |
+| 平台 | 11 | 探针、request_id、安全响应头、错误契约、产物路径校验、配置解析与两条回归 |
+
+CI 在 push / PR 时跑 ruff + pytest（3.11 / 3.13，含真实 ffmpeg 编码与中文字体）+ HTTP 冒烟，
+见 [`.github/workflows/ci.yml`](.github/workflows/ci.yml)。
 
 ---
 
-## 与参考项目的差异（如实说明）
+## 与参考项目的差异
 
 | 参考项目 AIGCPanel | 本项目 |
 |---|---|
@@ -189,33 +264,71 @@ python -m pytest -q     # 27 passed
 **没有做的事**：不下载真实模型权重、不做直播推流、不做桌面打包。
 这些是产品功能，不是这个项目的重点；本项目证明的是"数字人生产可以工程化"。
 
+**已知边界**：内置渲染器画的是抽象数字人（圆盘头像 + 口型条），不是真人；
+接真实模型后画面来自模型服务，而队列、管线、字幕、产物链路完全一致。
+
 ---
 
 ## 目录
 
 ```text
-AIGC-Avatar-Studio/
+aigc-avatar-studio/
 ├── app/
-│   ├── main.py                 # 应用装配、启动恢复
-│   ├── config.py / db.py / models.py
-│   ├── api/                    # REST 路由 + 请求模型
+│   ├── main.py                  # 应用装配、中间件、启动收敛与恢复
+│   ├── config.py                # 环境变量配置（单一数据根目录）
+│   ├── logging.py               # 结构化日志 + request_id 注入
+│   ├── middleware.py            # 请求关联 ID、访问日志、安全响应头
+│   ├── errors.py                # 统一错误响应
+│   ├── db.py / models.py        # SQLAlchemy 模型（ModelService/Voice/Job/JobStep/Asset）
+│   ├── api/                     # REST 路由 + 请求模型
 │   ├── providers/
-│   │   ├── catalog.py          # 8 个模型服务 + 预设音色
-│   │   ├── manager.py          # 安装/启动/停止/卸载/健康状态机
-│   │   ├── adapters.py         # LocalEngine + RemoteHTTPEngine 模板
-│   │   └── base.py             # TTS/Avatar/ASR Protocol
+│   │   ├── catalog.py           # 8 个模型服务 + 预设音色
+│   │   ├── manager.py           # 安装/启动/停止/卸载/健康状态机
+│   │   ├── adapters.py          # LocalEngine + RemoteHTTPEngine 模板
+│   │   └── base.py              # TTS/Avatar/ASR Protocol
 │   ├── pipeline/
-│   │   ├── script.py           # 切句与时长估算
-│   │   ├── produce.py          # 五步生产管线
-│   │   └── jobs.py             # 队列、进度、取消、重试
-│   └── media/                  # TTS(WAV) / 字幕(SRT) / 视频(MP4) 引擎
-├── web/                        # 单页控制台
-├── tests/                      # 媒体 + 管线 + API 测试
-├── examples/                   # curl / .http 示例
-├── scripts/                    # demo / 冒烟 / 截图
-└── docs/                       # 架构、API、截图
+│   │   ├── script.py            # 切句与时长估算
+│   │   ├── produce.py           # 五步生产管线
+│   │   └── jobs.py              # 队列、进度、取消、重试
+│   └── media/                   # TTS(WAV) / 字幕(SRT) / 数字人渲染(MP4)
+├── web/                         # 单页控制台
+├── tests/                       # 媒体 / 管线 / API / 平台（38 个）
+├── examples/                    # curl / .http 示例
+├── scripts/                     # demo / 冒烟 / 截图
+├── docs/                        # 架构、API、运维手册、截图
+├── Dockerfile                   # 多阶段构建，内置 ffmpeg 与中文字体、非 root
+├── docker-compose.yml
+└── Makefile                     # install / run / test / lint / smoke / docker-*
 ```
 
-## License
+---
 
-MIT
+## Roadmap
+
+| 版本 | 内容 |
+|---|---|
+| v0.6（当前） | 生产化加固：结构化日志与 request_id、探针、统一错误契约、容器化、运维与安全文档 |
+| v0.7 | 真实 TTS 适配器（CosyVoice / IndexTTS），保留 `synthesize` 契约 |
+| v0.8 | 对象存储与产物签名 URL；任务中间帧目录自动清理 |
+| v0.9 | 外部队列 + 多副本；长脚本分片与断点续跑 |
+| v1.0 | 数字人形象库与多模板；字幕样式可配置 |
+
+变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+---
+
+## 文档
+
+- [架构与设计决策](docs/ARCHITECTURE.md) —— 分层、模型状态机、生产管线、可观测、安全边界、取舍
+- [API 参考](docs/API.md) —— 全部端点、探针、错误契约与示例
+- [运维手册](docs/OPERATIONS.md) —— 部署形态、探针、日志排障、备份、扩容、上线清单
+- [安全策略](SECURITY.md) —— 安全边界与漏洞报告流程
+- [贡献指南](CONTRIBUTING.md) —— 本地开发、PR 前必过的检查、如何接真实模型
+
+---
+
+## 致谢与许可
+
+- 产品形态参考 [AIGCPanel](https://github.com/modstart-lib/aigcpanel)；
+- 项目名称沿用 AIGC 数字人领域的通用叫法，示例素材与音色均为程序生成，不含真实人物；
+- MIT License，见 [LICENSE](LICENSE)。

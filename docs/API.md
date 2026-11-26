@@ -1,12 +1,44 @@
 # API 参考
 
-Base URL：`http://127.0.0.1:8000`　交互文档：`/docs`
+Base URL：`http://127.0.0.1:8000`　交互文档：`/docs`（`DOCS_ENABLED=false` 时关闭）
 
 ## 约定
 
 - 全部前缀 `/api`，JSON 收发；产物下载是二进制流。
 - 生产任务是**异步**的：`POST /api/produce` 返回 `202 + job_id`，轮询 `GET /api/jobs/{id}`。
-- 错误码：`404` 资源不存在、`409` 状态冲突（模型未启动/任务未结束）、`410` 产物文件已清理、`422` 参数或契约错误。
+- **请求关联 ID**：每个响应都带 `X-Request-ID`（可用同名请求头透传上游值，最长 128 字符），
+  同一条 ID 会出现在服务端所有相关日志里。
+- **统一错误体**：`{"detail": <字符串或对象>, "request_id": "<id>"}`。
+  `detail` 为对象时表示字段级校验原因（见第 6 节）。报障请提供 `request_id`。
+
+| 状态码 | 含义 |
+|---|---|
+| `403` | 产物路径不在数据目录内 |
+| `404` | 资源不存在（模型 / 音色 / 任务 / 产物 / 工具） |
+| `409` | 状态冲突（模型未启动、任务未结束、预设音色不可删） |
+| `410` | 产物文件已被清理 |
+| `422` | 参数 / 契约错误，或请求体不合法 |
+| `503` | `/api/ready` 探测到依赖不可用 |
+
+## 探针
+
+`GET /api/health`（存活，不查库、不调 ffmpeg）：
+
+```json
+{
+  "status": "ok", "version": "0.6.0", "environment": "production",
+  "engine": "local-engine", "ffmpeg": "ffmpeg", "workers": 1,
+  "sample_rate": 24000, "database": "sqlite", "docs_enabled": false, "uptime_s": 1284.5
+}
+```
+
+`GET /api/ready`（就绪，检查数据库 / ffmpeg / ffprobe / 数据目录）：
+
+```json
+{"status": "ready", "checks": {"database": true, "ffmpeg": true, "ffprobe": true, "data_dir": true}, "version": "0.6.0"}
+```
+
+任一检查失败返回 `503` + `{"status": "degraded", ...}`。
 
 ---
 
@@ -14,7 +46,8 @@ Base URL：`http://127.0.0.1:8000`　交互文档：`/docs`
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/health` | 健康检查、引擎、worker 数 |
+| GET | `/api/health` | 存活探针 |
+| GET | `/api/ready` | 就绪探针（含 ffmpeg 与数据目录可写） |
 | GET | `/api/catalog` | 模型、音色、风格、分辨率预设、示例脚本 |
 | GET | `/api/models` | 模型服务列表（含进度/端口/健康） |
 | GET | `/api/models/{id}` | 单个模型 |
@@ -26,7 +59,7 @@ Base URL：`http://127.0.0.1:8000`　交互文档：`/docs`
 | GET | `/api/voices` | 音色列表 |
 | POST | `/api/voices` | 新建自定义音色 |
 | POST | `/api/voices/clone` | 克隆音色（参考音频 base64，可选） |
-| DELETE | `/api/voices/{id}` | 删除非预设音色 |
+| DELETE | `/api/voices/{id}` | 删除非预设音色（同时清理参考音频） |
 | POST | `/api/produce` | 提交生产任务 |
 | POST | `/api/demo/run` | 一键示例 |
 | GET | `/api/jobs` | 任务列表 |
@@ -207,3 +240,40 @@ GET /api/metrics
   "models": {"total": 8, "installed": 3, "running": 2, "disk_mb": 1280}
 }
 ```
+
+## 6. 错误响应示例
+
+业务校验失败（脚本为空、模型未启动）：
+
+```json
+{"detail": "MiniMax 未运行，请先安装并启动", "request_id": "9f2c1a7b3d10"}
+```
+
+请求体本身不合法（缺必填字段 / 多传字段）：
+
+```json
+{
+  "detail": {
+    "message": "请求参数校验失败",
+    "errors": [
+      {"loc": ["body", "script"], "msg": "Field required", "type": "missing"},
+      {"loc": ["body", "nope"], "msg": "Extra inputs are not permitted", "type": "extra_forbidden"}
+    ]
+  },
+  "request_id": "9f2c1a7b3d10"
+}
+```
+
+产物路径越界（不在 `AIGC_DATA_DIR` 内）：
+
+```json
+{"detail": "非法的产物路径", "request_id": "9f2c1a7b3d10"}
+```
+
+未预期异常（不回显堆栈）：
+
+```json
+{"detail": "服务内部错误，请携带 request_id 反馈", "request_id": "9f2c1a7b3d10"}
+```
+
+任务失败不是 HTTP 错误：接口返回 `200`，任务体里 `status=failed`，原因在 `error` 与失败步骤的 `detail` 中。
