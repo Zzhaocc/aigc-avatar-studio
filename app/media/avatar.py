@@ -466,6 +466,11 @@ def _stderr_text(error: subprocess.CalledProcessError) -> str:
     return str(raw or "")
 
 
+def _signed_exit_code(code: int) -> int:
+    """Windows 会把负的退出码报成无符号 32 位（4294967294），转回可读值。"""
+    return code - 0x100000000 if code > 0x7FFFFFFF else code
+
+
 def _run_ffmpeg(command: list[str], action: str) -> None:
     try:
         subprocess.run(command, check=True, capture_output=True, timeout=get_settings().ffmpeg_timeout)
@@ -474,7 +479,9 @@ def _run_ffmpeg(command: list[str], action: str) -> None:
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{action}失败：执行超时（>{get_settings().ffmpeg_timeout:.0f}s）") from exc
     except subprocess.CalledProcessError as exc:
-        raise RuntimeError(f"{action}失败：{_stderr_text(exc)[-800:]}") from exc
+        # 带上退出码：被外部杀掉（OOM / 杀软 / 容器驱逐）时 stderr 往往没有错误行
+        code = _signed_exit_code(exc.returncode)
+        raise RuntimeError(f"{action}失败（ffmpeg exit {code}）：{_stderr_text(exc)[-800:]}") from exc
 
 
 def _run_capture(command: list[str], action: str) -> bytes:
@@ -485,7 +492,8 @@ def _run_capture(command: list[str], action: str) -> bytes:
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"{action}失败：执行超时（>{get_settings().ffmpeg_timeout:.0f}s）") from exc
     except subprocess.CalledProcessError as exc:
-        raise RuntimeError(f"{action}失败：{_stderr_text(exc)[-800:]}") from exc
+        code = _signed_exit_code(exc.returncode)
+        raise RuntimeError(f"{action}失败（ffprobe exit {code}）：{_stderr_text(exc)[-800:]}") from exc
     return completed.stdout or b""
 
 
