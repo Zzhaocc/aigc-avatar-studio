@@ -79,7 +79,7 @@ class LocalEngine:
             "segments": [],
             "engine": self.name,
             "degraded": True,
-            "note": "内置引擎不含 ASR，请安装 FunASR 并配置 AIGC_FUNASR_PARA FORMER_URL",
+            "note": "内置引擎不含 ASR，请安装 FunASR 并配置 AIGC_FUNASR_PARAFORMER_URL",
         }
 
 
@@ -92,9 +92,11 @@ class RemoteHTTPEngine:
     """
 
     def __init__(self, base_url: str, name: str = "remote") -> None:
+        from app.config import get_settings
+
         self.base_url = base_url.rstrip("/")
         self.name = name
-        self.timeout = float(os.getenv("AIGC_REMOTE_TIMEOUT", "120"))
+        self.timeout = get_settings().remote_timeout
 
     def synthesize(self, text: str, out_path: Path, *, pitch: float, speed: float, timbre: str) -> dict:
         try:

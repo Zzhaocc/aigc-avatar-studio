@@ -99,7 +99,9 @@ def main() -> int:
         print(f"分辨率：{job.output['resolution'][0]}×{job.output['resolution'][1]}｜风格：{job.output['style']}")
         assets = db.scalars(select(Asset).where(Asset.job_id == job_id)).all()
         for asset in assets:
-            print(f"  {asset.kind:<9} {asset.filename:<16} {asset.size_bytes:>9,} B  {asset.duration or ''}  {asset.path}")
+            print(
+                f"  {asset.kind:<9} {asset.filename:<16} {asset.size_bytes:>9,} B  {asset.duration or ''}  {asset.path}"
+            )
         print("\n步骤耗时：")
         for step in job.steps:
             print(f"  {step.seq}. {step.name:<24} {step.latency_ms:>6} ms  {step.detail}")
@@ -142,9 +144,11 @@ def main() -> int:
 
     with session_scope() as db:
         data = metrics_fn(db)
-    print(f"任务：{data['jobs']['total']} 个，成功 {data['jobs']['succeeded']}，平均 {data['jobs']['avg_duration_ms']} ms")
+    jobs_meta = data["jobs"]
+    models_meta = data["models"]
+    print(f"任务：{jobs_meta['total']} 个，成功 {jobs_meta['succeeded']}，平均 {jobs_meta['avg_duration_ms']} ms")
     print(f"产物：{data['assets']['count']} 个，共 {data['assets']['total_bytes'] / 1048576:.2f} MB")
-    print(f"模型：已安装 {data['models']['installed']}，运行 {data['models']['running']}，磁盘 {data['models']['disk_mb']} MB")
+    print(f"模型：已安装 {models_meta['installed']}，运行 {models_meta['running']}，磁盘 {models_meta['disk_mb']} MB")
 
     print(f"\n成片路径：{Path(video.path).resolve()}")
     print("启动控制台：python -m uvicorn app.main:app --port 8000")

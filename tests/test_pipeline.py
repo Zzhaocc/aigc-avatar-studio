@@ -53,8 +53,15 @@ def _create_job(script: str) -> str:
             status="queued",
             model_id=_local_model_id(),
             voice_id=_first_voice_id(),
-            input={"script": script, "title": "测试任务", "style": "studio", "width": 360, "height": 640, "fps": 2,
-                   "model_key": "local-engine"},
+            input={
+                "script": script,
+                "title": "测试任务",
+                "style": "studio",
+                "width": 360,
+                "height": 640,
+                "fps": 2,
+                "model_key": "local-engine",
+            },
         )
         db.add(job)
         db.flush()

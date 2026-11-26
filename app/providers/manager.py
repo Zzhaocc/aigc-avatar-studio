@@ -17,7 +17,7 @@ import shutil
 import socket
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -25,8 +25,11 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import session_scope
+from app.logging import get_logger
 from app.models import ModelService
 from app.providers.catalog import MODEL_CATALOG
+
+log = get_logger("app.models")
 
 _LOCK = threading.Lock()
 _ACTIVE_DOWNLOADS: set[str] = set()
@@ -34,7 +37,7 @@ PORT_BASE = 19100
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ModelManager:
@@ -91,6 +94,7 @@ class ModelManager:
             model.status, model.progress, model.last_error = "downloading", 0, None
             key = model.key
 
+        log.info("model_install_started", extra={"model_id": model_id, "key": key})
         _ACTIVE_DOWNLOADS.add(key)
         threading.Thread(target=self._download, args=(model_id, key), name=f"install-{key}", daemon=True).start()
         return {"ok": True, "status": "downloading"}
@@ -130,7 +134,9 @@ class ModelManager:
                 model.progress = 100
                 model.path = str(target)
                 model.installed_at = _now()
-        except Exception as exc:  # noqa: BLE001
+            log.info("model_installed", extra={"model_id": model_id, "key": key, "path": str(target)})
+        except Exception as exc:  # noqa: BLE001 —— 安装失败要落到 last_error，不能让状态卡在 downloading
+            log.exception("model_install_failed", extra={"model_id": model_id, "key": key})
             with session_scope() as db:
                 model = db.get(ModelService, model_id)
                 if model is not None:
@@ -164,6 +170,7 @@ class ModelManager:
                     json.dumps({"port": model.port, "started_at": _now().isoformat()}, ensure_ascii=False),
                     encoding="utf-8",
                 )
+        log.info("model_started", extra={"model_id": model_id, "port": port})
         return {"ok": True, "status": "running", "port": port}
 
     def stop(self, model_id: str) -> dict:

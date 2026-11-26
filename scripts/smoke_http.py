@@ -1,7 +1,7 @@
 """对已启动的服务做端到端冒烟验证。
 
-    python scripts/smoke_http.py            # 默认 http://127.0.0.1:8000
-    python scripts/smoke_http.py 8080
+python scripts/smoke_http.py            # 默认 http://127.0.0.1:8000
+python scripts/smoke_http.py 8080
 """
 
 from __future__ import annotations
@@ -36,8 +36,13 @@ def main() -> int:
     with httpx.Client(base_url=BASE, timeout=60.0, trust_env=False) as c:
         print(f"目标：{BASE}")
 
-        health = c.get("/api/health").json()
+        health_resp = c.get("/api/health")
+        health = health_resp.json()
         check("健康检查", health["status"] == "ok", health["engine"])
+        check("请求关联 ID", bool(health_resp.headers.get("X-Request-ID")), health_resp.headers.get("X-Request-ID", ""))
+        check("安全响应头", health_resp.headers.get("X-Content-Type-Options") == "nosniff")
+        ready = c.get("/api/ready")
+        check("就绪探针", ready.status_code == 200 and ready.json()["status"] == "ready", str(ready.status_code))
 
         catalog = c.get("/api/catalog").json()
         check("模型目录", len(catalog["models"]) >= 8, f"{len(catalog['models'])} 个")
@@ -82,8 +87,9 @@ def main() -> int:
 
         video = next(a for a in job["assets"] if a["kind"] == "video")
         download = c.get(f"/api/assets/{video['id']}")
-        check("下载成片", download.status_code == 200 and len(download.content) > 20_000,
-              f"{len(download.content):,} B")
+        check(
+            "下载成片", download.status_code == 200 and len(download.content) > 20_000, f"{len(download.content):,} B"
+        )
         check("视频可预览", download.headers["content-type"].startswith("video/mp4"))
 
         probe = c.post("/api/tools/probe", json={"asset_id": video["id"], "args": {}})

@@ -79,10 +79,12 @@ def produce(
 
     timeline: list[dict[str, Any]] = []
     cursor = 0.0
-    for index, (text, duration) in enumerate(zip(segments_text, durations)):
+    for index, (text, duration) in enumerate(zip(segments_text, durations, strict=False)):
         if index > 0:
             cursor += SEGMENT_GAP
-        timeline.append({"text": text, "start": round(cursor, 3), "end": round(cursor + duration, 3), "duration": duration})
+        timeline.append(
+            {"text": text, "start": round(cursor, 3), "end": round(cursor + duration, 3), "duration": duration}
+        )
         cursor += duration
     srt = build_srt([{"text": item["text"], "duration": item["duration"]} for item in timeline], work_dir / "voice.srt")
     srt["segments"] = timeline

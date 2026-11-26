@@ -4,20 +4,23 @@ from __future__ import annotations
 
 import base64
 import binascii
+import shutil
 import struct
+import time
 import wave
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import FileResponse
-from sqlalchemy import desc, func, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
+from app import __version__
 from app.api.schemas import ProduceRequest, ToolRequest, VoiceCloneRequest, VoiceCreate
 from app.config import get_settings
-from app.db import SessionLocal, get_db
+from app.db import SessionLocal, get_db, ping
 from app.models import Asset, Job, ModelService, VoiceProfile, new_id
 from app.pipeline.jobs import cleanup_job_files, runner
 from app.providers.catalog import DEMO_SCRIPTS, STYLES
@@ -30,7 +33,11 @@ router = APIRouter(prefix="/api")
 # 序列化
 # --------------------------------------------------------------------------- #
 def _dt(value: datetime | None) -> str | None:
-    return value.isoformat() + "Z" if value else None
+    """统一成 UTC ISO8601（带 Z）。SQLite 取回的是 naive datetime，按 UTC 处理。"""
+    if value is None:
+        return None
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    return aware.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _model_out(model: ModelService, health: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -122,26 +129,66 @@ def _job_out(job: Job, *, detail: bool = False) -> dict[str, Any]:
 # 元信息
 # --------------------------------------------------------------------------- #
 @router.get("/health", tags=["meta"])
-def health(db: Session = Depends(get_db)) -> dict[str, Any]:
+def health(request: Request) -> dict[str, Any]:
+    """存活探针：进程能响应即返回 200，不查数据库、不调 ffmpeg。
+
+    容器 / K8s 的 livenessProbe 指这里；依赖是否可用看 ``/api/ready``。
+    """
     settings = get_settings()
-    running = db.scalar(select(func.count()).select_from(Job).where(Job.status == "running")) or 0
-    queued = db.scalar(select(func.count()).select_from(Job).where(Job.status == "queued")) or 0
+    started_at = getattr(request.app.state, "started_at", None)
     return {
         "status": "ok",
-        "version": settings.version,
+        "version": __version__,
+        "environment": settings.environment,
         "engine": "local-engine",
         "ffmpeg": settings.ffmpeg,
-        "running_jobs": running,
-        "queued_jobs": queued,
-        "workers": settings.max_workers,
+        "workers": max(1, settings.max_workers),
+        "sample_rate": settings.sample_rate,
+        "database": "sqlite" if settings.sqlite else "external",
+        "docs_enabled": settings.docs_enabled,
+        "uptime_s": round(time.time() - started_at, 3) if started_at else 0.0,
     }
+
+
+@router.get("/ready", tags=["meta"])
+def ready() -> JSONResponse:
+    """就绪探针：数据库、ffmpeg/ffprobe、数据目录都可用才返回 200。
+
+    返回 503 时应先摘流量：此时发起生产任务必然失败或产物写不进去。
+    """
+    settings = get_settings()
+    checks = {
+        "database": ping(),
+        "ffmpeg": shutil.which(settings.ffmpeg) is not None,
+        "ffprobe": shutil.which(settings.ffprobe) is not None,
+        "data_dir": _writable(settings.data_dir),
+    }
+    ok = all(checks.values())
+    return JSONResponse(
+        status_code=200 if ok else 503,
+        content={"status": "ready" if ok else "degraded", "checks": checks, "version": __version__},
+    )
+
+
+def _writable(path: Path) -> bool:
+    """用一次真实写入判断目录可写（比检查权限位可靠）。"""
+    probe = path / ".ready_probe"
+    try:
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 @router.get("/catalog", tags=["meta"])
 def catalog(db: Session = Depends(get_db)) -> dict[str, Any]:
-    models = db.scalars(select(ModelService).order_by(ModelService.builtin.desc(), ModelService.kind, ModelService.name)).all()
+    models = db.scalars(
+        select(ModelService).order_by(ModelService.builtin.desc(), ModelService.kind, ModelService.name)
+    ).all()
     voices = db.scalars(select(VoiceProfile).order_by(VoiceProfile.created_at)).all()
     return {
+        "version": __version__,
         "models": [_model_out(m) for m in models],
         "voices": [_voice_out(v) for v in voices],
         "styles": [{"key": k, **v} for k, v in STYLES.items()],
@@ -308,8 +355,12 @@ def delete_voice(voice_id: str, db: Session = Depends(get_db)) -> None:
         raise HTTPException(404, "音色不存在")
     if voice.kind == "preset":
         raise HTTPException(409, "预设音色不能删除")
+    reference = Path(voice.reference_path) if voice.reference_path else None
     db.delete(voice)
     db.commit()
+    # 克隆音色的参考音频跟着删掉，避免 uploads/ 越积越多
+    if reference is not None:
+        reference.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -454,7 +505,10 @@ def _asset_or_404(asset_id: str, db: Session) -> Asset:
         raise HTTPException(404, "产物不存在")
     settings = get_settings()
     path = Path(asset.path).resolve()
-    if not str(path).startswith(str(settings.data_dir.resolve())) or not path.exists():
+    # 用 is_relative_to 而不是字符串前缀：避免 /data-evil 这类同前缀目录绕过校验
+    if not path.is_relative_to(settings.data_dir.resolve()):
+        raise HTTPException(403, "非法的产物路径")
+    if not path.exists():
         raise HTTPException(410, "产物文件已被清理")
     return asset
 

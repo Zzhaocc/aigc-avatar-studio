@@ -48,7 +48,13 @@ def main() -> int:
         page.screenshot(path=str(OUT / "console-studio.jpg"), type="jpeg", quality=88)
         print("  ✓ 工作台 → console-studio.jpg")
 
-        for view, name in [("models", "模型服务"), ("voices", "音色"), ("jobs", "任务"), ("tools", "工具箱"), ("metrics", "指标")]:
+        for view, name in [
+            ("models", "模型服务"),
+            ("voices", "音色"),
+            ("jobs", "任务"),
+            ("tools", "工具箱"),
+            ("metrics", "指标"),
+        ]:
             page.click(f'.nav-item[data-view="{view}"]')
             page.wait_for_timeout(1200)
             page.screenshot(path=str(OUT / f"console-{view}.jpg"), type="jpeg", quality=88)

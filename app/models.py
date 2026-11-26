@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -23,7 +23,7 @@ def new_id(prefix: str) -> str:
 
 
 def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class ModelService(Base):
@@ -89,10 +89,10 @@ class Job(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    steps: Mapped[list["JobStep"]] = relationship(
+    steps: Mapped[list[JobStep]] = relationship(
         back_populates="job", cascade="all, delete-orphan", order_by="JobStep.seq"
     )
-    assets: Mapped[list["Asset"]] = relationship(back_populates="job", cascade="all, delete-orphan")
+    assets: Mapped[list[Asset]] = relationship(back_populates="job", cascade="all, delete-orphan")
 
 
 class JobStep(Base):
@@ -110,7 +110,7 @@ class JobStep(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    job: Mapped["Job"] = relationship(back_populates="steps")
+    job: Mapped[Job] = relationship(back_populates="steps")
 
 
 class Asset(Base):
@@ -129,4 +129,4 @@ class Asset(Base):
     duration: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
-    job: Mapped["Job"] = relationship(back_populates="assets")
+    job: Mapped[Job] = relationship(back_populates="assets")

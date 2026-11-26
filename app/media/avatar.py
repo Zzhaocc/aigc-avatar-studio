@@ -8,6 +8,8 @@
 
 - 音频时长以 ``wave`` 读取的 WAV 为准，不依赖 ffprobe；
 - 每帧 PNG 放在输出文件同级的临时目录，``finally`` 中清理；
+- ffmpeg / ffprobe 的可执行路径与超时来自配置（``FFMPEG_BIN`` / ``FFPROBE_BIN`` /
+  ``AIGC_FFMPEG_TIMEOUT``），换镜像、换版本不需要改代码；
 - ffmpeg 失败统一转成 ``RuntimeError``，保留最后 800 字符 stderr；
 - 找不到中文字体时退化为 Pillow 默认字体，绝不因字体缺失而崩溃。
 """
@@ -23,6 +25,19 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
+
+from app.config import get_settings
+
+
+def ffmpeg_bin() -> str:
+    """当前生效的 ffmpeg 路径（每次读取，便于测试与容器覆盖）。"""
+    return get_settings().ffmpeg
+
+
+def ffprobe_bin() -> str:
+    """当前生效的 ffprobe 路径。"""
+    return get_settings().ffprobe
+
 
 # 字体探测顺序：Windows 微软雅黑 → 黑体 → Linux Noto CJK → DejaVu → 默认。
 _FONT_CANDIDATES: tuple[str, ...] = (
@@ -264,7 +279,12 @@ def _build_static_layer(
     art.ellipse(disc_box, fill=(*preset["disc"], 255))
     art.ellipse(shoulder_box, fill=(*preset["body"], 255))
     art.rectangle(
-        (cx - int(head_radius * 0.30), head_cy + int(head_radius * 0.62), cx + int(head_radius * 0.30), cy + int(radius * 0.45)),
+        (
+            cx - int(head_radius * 0.30),
+            head_cy + int(head_radius * 0.62),
+            cx + int(head_radius * 0.30),
+            cy + int(radius * 0.45),
+        ),
         fill=(*preset["skin"], 255),
     )
     art.ellipse(head_box, fill=(*preset["skin"], 255))
@@ -279,7 +299,12 @@ def _build_static_layer(
     for sign in (-1, 1):
         ear_x = cx + sign * head_radius
         art.ellipse(
-            (ear_x - int(head_radius * 0.12), head_cy - int(head_radius * 0.12), ear_x + int(head_radius * 0.12), head_cy + int(head_radius * 0.18)),
+            (
+                ear_x - int(head_radius * 0.12),
+                head_cy - int(head_radius * 0.12),
+                ear_x + int(head_radius * 0.12),
+                head_cy + int(head_radius * 0.18),
+            ),
             fill=(*preset["skin"], 255),
         )
     # 眼睛（位于发际线下方）
@@ -293,7 +318,12 @@ def _build_static_layer(
         )
     # 鼻梁的一点阴影
     art.ellipse(
-        (cx - max(1, int(head_radius * 0.045)), head_cy + int(head_radius * 0.10), cx + max(1, int(head_radius * 0.045)), head_cy + int(head_radius * 0.20)),
+        (
+            cx - max(1, int(head_radius * 0.045)),
+            head_cy + int(head_radius * 0.10),
+            cx + max(1, int(head_radius * 0.045)),
+            head_cy + int(head_radius * 0.20),
+        ),
         fill=(210, 168, 144, 120),
     )
 
@@ -318,7 +348,12 @@ def _build_static_layer(
     # 标题下的强调线
     line_half = max(24, int(width * 0.09))
     draw.rounded_rectangle(
-        (width // 2 - line_half, title_y + int(fonts_size(fonts["title"]) * 0.95), width // 2 + line_half, title_y + int(fonts_size(fonts["title"]) * 1.02)),
+        (
+            width // 2 - line_half,
+            title_y + int(fonts_size(fonts["title"]) * 0.95),
+            width // 2 + line_half,
+            title_y + int(fonts_size(fonts["title"]) * 1.02),
+        ),
         radius=2,
         fill=(*accent, 200),
     )
@@ -426,25 +461,29 @@ def _draw_subtitle(
 # --------------------------------------------------------------------------- #
 def _stderr_text(error: subprocess.CalledProcessError) -> str:
     raw = error.stderr
-    if isinstance(raw, (bytes, bytearray)):
+    if isinstance(raw, bytes | bytearray):
         return bytes(raw).decode("utf-8", errors="replace")
     return str(raw or "")
 
 
 def _run_ffmpeg(command: list[str], action: str) -> None:
     try:
-        subprocess.run(command, check=True, capture_output=True)
+        subprocess.run(command, check=True, capture_output=True, timeout=get_settings().ffmpeg_timeout)
     except FileNotFoundError as exc:
-        raise RuntimeError(f"{action}失败：找不到可执行文件 {command[0]}，请确认在 PATH 中") from exc
+        raise RuntimeError(f"{action}失败：找不到可执行文件 {command[0]}，请确认在 PATH 中或配置 FFMPEG_BIN") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{action}失败：执行超时（>{get_settings().ffmpeg_timeout:.0f}s）") from exc
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"{action}失败：{_stderr_text(exc)[-800:]}") from exc
 
 
 def _run_capture(command: list[str], action: str) -> bytes:
     try:
-        completed = subprocess.run(command, check=True, capture_output=True)
+        completed = subprocess.run(command, check=True, capture_output=True, timeout=get_settings().ffmpeg_timeout)
     except FileNotFoundError as exc:
-        raise RuntimeError(f"{action}失败：找不到可执行文件 {command[0]}，请确认在 PATH 中") from exc
+        raise RuntimeError(f"{action}失败：找不到可执行文件 {command[0]}，请确认在 PATH 中或配置 FFPROBE_BIN") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"{action}失败：执行超时（>{get_settings().ffmpeg_timeout:.0f}s）") from exc
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(f"{action}失败：{_stderr_text(exc)[-800:]}") from exc
     return completed.stdout or b""
@@ -495,12 +534,7 @@ def _patch_mp3_info(path: Path) -> None:
 
     start = 0
     if data[:3] == b"ID3" and len(data) >= 10:
-        tag_size = (
-            ((data[6] & 0x7F) << 21)
-            | ((data[7] & 0x7F) << 14)
-            | ((data[8] & 0x7F) << 7)
-            | (data[9] & 0x7F)
-        )
+        tag_size = ((data[6] & 0x7F) << 21) | ((data[7] & 0x7F) << 14) | ((data[8] & 0x7F) << 7) | (data[9] & 0x7F)
         start = 10 + tag_size
     while start + 4 <= len(data) and not _mp3_frame_length(bytes(data[start : start + 4])):
         start += 1
@@ -543,9 +577,7 @@ def _run_mp3_ffmpeg(command: list[str], action: str) -> None:
         return
     except RuntimeError as exc:
         message = str(exc)
-        if "libmp3lame" not in message or (
-            "Unknown encoder" not in message and "Encoder not found" not in message
-        ):
+        if "libmp3lame" not in message or ("Unknown encoder" not in message and "Encoder not found" not in message):
             raise
 
     fallback = list(command)
@@ -660,7 +692,7 @@ def render_avatar_video(
             frame.save(frames_dir / f"frame_{index + 1:04d}.png", format="PNG")
 
         command = [
-            "ffmpeg",
+            ffmpeg_bin(),
             "-y",
             "-framerate",
             str(fps),
@@ -707,7 +739,7 @@ def probe(path: Path) -> dict:
         raise FileNotFoundError(f"媒体文件不存在：{source}")
 
     command = [
-        "ffprobe",
+        ffprobe_bin(),
         "-v",
         "error",
         "-show_entries",
@@ -759,7 +791,7 @@ def extract_audio(video_path: Path, out_path: Path, fmt: str = "mp3") -> dict:
     target.parent.mkdir(parents=True, exist_ok=True)
     codec = "libmp3lame" if audio_format == "mp3" else "pcm_s16le"
     command = [
-        "ffmpeg",
+        ffmpeg_bin(),
         "-y",
         "-i",
         str(source),
@@ -798,7 +830,7 @@ def thumbnail(video_path: Path, out_path: Path, at: float = 1.0) -> dict:
     target = Path(out_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        "ffmpeg",
+        ffmpeg_bin(),
         "-y",
         "-ss",
         f"{timestamp:.3f}",
@@ -870,7 +902,7 @@ def change_speed(audio_path: Path, out_path: Path, factor: float) -> dict:
 
     chain = ",".join(f"atempo={_format_filter(value)}" for value in _atempo_chain(speed))
     command = [
-        "ffmpeg",
+        ffmpeg_bin(),
         "-y",
         "-i",
         str(source),
@@ -907,7 +939,7 @@ def compress_video(video_path: Path, out_path: Path, crf: int = 28) -> dict:
     target = Path(out_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        "ffmpeg",
+        ffmpeg_bin(),
         "-y",
         "-i",
         str(source),
