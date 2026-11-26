@@ -1,7 +1,7 @@
 # AIGC Avatar Studio · AI 数字人内容生产平台
 
 > 一段文案 → 一条带语音、字幕、数字人画面的视频。
-> 服务端可运行：模型服务生命周期 + 真实媒体管线 + 任务队列 + FFmpeg 工具箱。
+> 服务端可运行：模型服务生命周期 + 媒体管线 + 任务队列 + FFmpeg 工具箱。
 
 [![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.13-3776AB?style=flat-square)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=flat-square)](https://fastapi.tiangolo.com/)
@@ -26,7 +26,7 @@ AIGC Avatar Studio 是服务端的数字人内容生产平台：一段文案进�
 
 同时它把**模型服务**当成一等公民来管：8 个模型服务各自有安装目录、下载进度、端口与健康检查，
 状态机覆盖「未安装 → 下载 → 已装 → 启动 → 运行 → 停止 → 卸载 → 失败」。
-推理后端由适配器决定：内置离线引擎开箱即用，接真实模型只需把 `AIGC_<KEY>_URL` 指过去。
+推理后端由适配器决定：内置离线引擎可直接使用，接真实模型只需把 `AIGC_<KEY>_URL` 指过去。
 
 **不需要 GPU、不需要模型权重、不需要 API key**：内置引擎用 numpy 合成语音、Pillow + ffmpeg 渲染画面，
 产出真实可播放的 WAV / MP4 / SRT。生产走服务端队列，有步骤级进度、取消、重试与恢复。
@@ -98,7 +98,7 @@ installed →(start)→ starting → running →(stop)→ stopped
 健康检查按端口探测。**推理后端由适配器决定**：内置引擎直接可用，其它模型需要把
 `AIGC_<KEY>_URL` 指向真实服务（`app/providers/adapters.py` 里有 HTTP 适配器模板）。
 
-### 2. 真实媒体管线
+### 2. 媒体管线
 
 ```text
 脚本 → 切句（≤28 字）→ 逐句 TTS → 拼接 + 句间静音 → 时间轴字幕 → 数字人视频 → 缩略图 + 清单
@@ -118,7 +118,7 @@ installed →(start)→ starting → running →(stop)→ stopped
 - 取消是协作式的（每个句子前检查），1 秒内生效
 - 失败可一键重试；进程重启会把中断任务标为 failed，不会永远 running
 
-### 4. 工具箱（真实 ffmpeg）
+### 4. 工具箱（FFmpeg）
 
 对任意产物做 probe / 提取音轨 / 截封面 / 调倍速，结果作为新产物落库。
 

@@ -38,7 +38,7 @@ MODEL_CATALOG: list[dict[str, Any]] = [
         "version": "1.0.3",
         "size_mb": 2450,
         "builtin": False,
-        "description": "工业级零样本 TTS，中文韵律与情感控制较好。",
+        "description": "零样本 TTS，中文韵律与情感控制较好。",
         "tags": ["tts", "voice-clone", "zh"],
     },
     {
